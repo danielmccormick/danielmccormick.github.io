@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom" ><generator uri="https://jekyllrb.com/" version="3.8.5">Jekyll</generator><link href="http://localhost:4000/feed.xml" rel="self" type="application/atom+xml" /><link href="http://localhost:4000/" rel="alternate" type="text/html" /><updated>2019-07-04T17:29:35-04:00</updated><id>http://localhost:4000/feed.xml</id><title type="html">Daniel MC</title><subtitle>Personal website.</subtitle><author><name>Daniel McCormick</name></author><entry><title type="html">Learning From Mistakes - Concurrency, Packing and PNGs</title><link href="http://localhost:4000/blog/2019/07/04/learning-from-failure.html" rel="alternate" type="text/html" title="Learning From Mistakes - Concurrency, Packing and PNGs" /><published>2019-07-04T00:00:00-04:00</published><updated>2019-07-04T15:15:02-04:00</updated><id>http://localhost:4000/blog/2019/07/04/learning-from-failure</id><content type="html" xml:base="http://localhost:4000/blog/2019/07/04/learning-from-failure.html">&lt;p&gt;I’m a firm believer than you learn more from failures than from successes. From that perspective, for our &lt;a href=&quot;https://github.com/jzarnett/ece252&quot;&gt;concurrency class&lt;/a&gt; labs I must have learned a ton.&lt;/p&gt;
+<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom" ><generator uri="https://jekyllrb.com/" version="3.8.5">Jekyll</generator><link href="http://localhost:4000/feed.xml" rel="self" type="application/atom+xml" /><link href="http://localhost:4000/" rel="alternate" type="text/html" /><updated>2019-07-04T17:51:02-04:00</updated><id>http://localhost:4000/feed.xml</id><title type="html">Daniel MC</title><subtitle>Personal website.</subtitle><author><name>Daniel McCormick</name></author><entry><title type="html">Learning From Mistakes - Concurrency, Packing and PNGs</title><link href="http://localhost:4000/blog/2019/07/04/learning-from-failure.html" rel="alternate" type="text/html" title="Learning From Mistakes - Concurrency, Packing and PNGs" /><published>2019-07-04T00:00:00-04:00</published><updated>2019-07-04T15:15:02-04:00</updated><id>http://localhost:4000/blog/2019/07/04/learning-from-failure</id><content type="html" xml:base="http://localhost:4000/blog/2019/07/04/learning-from-failure.html">&lt;p&gt;I’m a firm believer than you learn more from failures than from successes. From that perspective, for our &lt;a href=&quot;https://github.com/jzarnett/ece252&quot;&gt;concurrency class&lt;/a&gt; labs I must have learned a ton.&lt;/p&gt;
 
 &lt;p&gt;In one of our labs, a challenge we had was that we needed to implement the producer/consumer problem for PNGs.
 We needed to download the PNGs from a webserver (as a &lt;em&gt;producer&lt;/em&gt;) into a finite size buffer, then move the data into the appopriate slots (as a &lt;em&gt;consumer&lt;/em&gt;) and concatenate them all into a final &lt;code class=&quot;highlighter-rouge&quot;&gt;all.png&lt;/code&gt; 
@@ -11,10 +11,11 @@ While that sounds fairly reasonable all things considered, we can get into a few
 &lt;ol&gt;
   &lt;li&gt;There’s no guarantee the last element would finish last, resulting in undesired gaps between producing and consuming&lt;/li&gt;
   &lt;li&gt;There’s implementation issues when there’s more producers/consumers than the size of the queue - how to you decide who gets which slots&lt;/li&gt;
-  &lt;li&gt;Scheduling advancments: do the producers just leapfrog the head?&lt;/li&gt;
+  &lt;li&gt;Scheduling how each worker moves: Does the first to finish just lock the queue and grab the first available slot? Does each worker get a predetermined slot?&lt;/li&gt;
 &lt;/ol&gt;
 
-&lt;p&gt;Regardless, there was a more clever design pattern. The idea here is that the buffer would be random access, and each index would be stored inside one of two stacks (either the producer stack or the consumer stack). When the producer gets a signal that it’s stack has an index, it grabs the index, downloads the data and adds the index to the consumer stack.&lt;/p&gt;
+&lt;p&gt;Regardless, there was a design that made more sense to us. 
+The idea here is that the buffer would be random access, and each index would be stored inside one of two stacks (either the producer stack or the consumer stack). When the producer gets a signal that it’s stack has an index, it grabs the index, downloads the data and adds the index to the consumer stack.&lt;/p&gt;
 
 &lt;p&gt;The producer pattern was roughly:&lt;/p&gt;
 
@@ -64,11 +65,11 @@ While that sounds fairly reasonable all things considered, we can get into a few
 } IHDR_t;`
 &lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
 
-&lt;p&gt;In additional debugging, we also found we got all other members correct - the only variable wrong was the CRC. This bug is not obvious at first, but it makes a reasonable amoutn of sense.&lt;/p&gt;
+&lt;p&gt;In additional debugging, we also found we got all other members correct - the only variable wrong in the header was the CRC. This bug is not obvious at first, but it makes a reasonable amoutn of sense.&lt;/p&gt;
 
-&lt;p&gt;The way we really called the crc calculation was something like &lt;code class=&quot;highlighter-rouge&quot;&gt;crc(&amp;amp;IHDR.type, (3*4)+(5*1))&lt;/code&gt;because we were calculating the CRC over three four-byte variables and five one-byte variables. We also knew each variable in the struct was the right value, and we were confident in the sizes. If you’d like to figure out why yourself, you should stop reading now.&lt;/p&gt;
+&lt;p&gt;The way we really called the crc calculation was something like &lt;code class=&quot;highlighter-rouge&quot;&gt;crc(&amp;amp;IHDR.type, (3*4)+(5*1))&lt;/code&gt;because we were calculating the CRC over three four-byte variables and five one-byte variables. We also knew each variable in the struct was corect, the size of each variable was correct, and the CRC was correct. If you’d like to figure out why yourself, you should stop reading now.&lt;/p&gt;
 
-&lt;p&gt;Fortunately for everyone else, we did the leg work. It turns out the culprit in this case was &lt;a href=&quot;https://stackoverflow.com/questions/4306186/structure-padding-and-packing&quot;&gt;struct padding&lt;/a&gt;. While in hindsight, this is pretty clear, at the time it’s easy to neglect that c structs don’t guarantee there’s contiguous memory by default.&lt;/p&gt;
+&lt;p&gt;Fortunately for us, a hex dump of the header yielded some more insight. It turns out the culprit in this case was &lt;a href=&quot;https://stackoverflow.com/questions/4306186/structure-padding-and-packing&quot;&gt;struct padding&lt;/a&gt;. While in hindsight, this makes a lot of sense, at the time it’s easy to neglect that c structs don’t guarantee there’s contiguous memory by default.&lt;/p&gt;
 
 &lt;p&gt;The fix from here was compiler specific, but pretty straightforwards:&lt;/p&gt;
 
@@ -76,6 +77,8 @@ While that sounds fairly reasonable all things considered, we can get into a few
     ...    
 } IHDR_t;    
 &lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;This problem also seemed specific to us, since a lot of our peers stored the variables in a “data” member, and to calculate the CRC they copied it all into a buffer. Fortunately, we prevailed and produced the correct result.&lt;/p&gt;
 
 &lt;h3 id=&quot;cleanup-and-debug&quot;&gt;Cleanup and Debug:&lt;/h3&gt;
 
@@ -87,7 +90,7 @@ While that sounds fairly reasonable all things considered, we can get into a few
 
 &lt;p&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;3409 log.out 1293&lt;/code&gt;&lt;/p&gt;
 
-&lt;p&gt;Ok. So on any given server, one person used roughly a quarter of all possible shared memory. Everyone was guilty of leaking at a point, but some seem to have a bit more of an issue than others. It’s also worth nothing that while shared memory unhooks from processes naturally, it doesn’t deallocate naturally (or even with &lt;code class=&quot;highlighter-rouge&quot;&gt;shmdt&lt;/code&gt;).&lt;/p&gt;
+&lt;p&gt;Any given server, the same one person used roughly a quarter of all possible shared memory. Everyone was guilty of leaking at a point, but some seem to have a bit more of an issue than others. It’s also worth nothing that while shared memory unhooks from processes naturally, it doesn’t deallocate naturally (or even with &lt;code class=&quot;highlighter-rouge&quot;&gt;shmdt&lt;/code&gt;).  This &lt;em&gt;was&lt;/em&gt; discussed in class, but it seems like many people forgot or their code prematurely terminated before the cleanup could occur.&lt;/p&gt;
 
 &lt;p&gt;If anyone is dealing with shared memory for the first time, it’s worth remembering to include &lt;code class=&quot;highlighter-rouge&quot;&gt;shmctl(shmid,IPC_RMID,NULL);&lt;/code&gt; at the end of their program to avoid funny surprises like this. I guess this is why it’s important to consider the impact your code has on others.&lt;/p&gt;
 
@@ -108,8 +111,8 @@ While that sounds fairly reasonable all things considered, we can get into a few
 &lt;p&gt;After a long time of barebones websites, I finally decided to make a bit more visually complicated website. Luckily, modern tools like jekyll have made this process far easier than ever anticipated.&lt;/p&gt;
 
 &lt;p&gt;After perusing many interesting designs such as &lt;a href=&quot;https://github.com/poole/hyde&quot;&gt;hyde&lt;/a&gt;, &lt;a href=&quot;https://github.com/aweekj/kiko-now&quot;&gt;kiko-now&lt;/a&gt;, and &lt;a href=&quot;https://github.com/hemangsk/Gravity&quot;&gt;gravity&lt;/a&gt;, 
-I ultimately chose &lt;strong&gt;&lt;a href=&quot;https://github.com/fongandrew/hydeout&quot;&gt;hydeout&lt;/a&gt;&lt;/strong&gt;, because both of it’s current support and ease of use to make blog posts.&lt;/p&gt;
+I ultimately chose &lt;strong&gt;&lt;a href=&quot;https://github.com/fongandrew/hydeout&quot;&gt;hydeout&lt;/a&gt;&lt;/strong&gt;, because it’s currently maintained, and I find it very easy to make blog posts.&lt;/p&gt;
 
 &lt;p&gt;Beyond specializing the template with my name, updating the favicon and removing all the basic blog posts, I ultimately removed the icons on the side that I felt were unnecessary.
-I’m delighted by both how easy &lt;code class=&quot;highlighter-rouge&quot;&gt;jekyll&lt;/code&gt; is to use and how fast I can create code the way I’d like.
+I’m delighted by both how easy &lt;code class=&quot;highlighter-rouge&quot;&gt;jekyll&lt;/code&gt; is to use and the abundance of beautiful templates all available open source.
 It feels far more natural and intuitive to write in markdown and let the computer convert to html for me. I’m grateful to have discovered such a wonderful tool.&lt;/p&gt;</content><author><name>Daniel McCormick</name></author><summary type="html">I finally have a halfway passable website up for public viewing. It was both fun and easier than anticipated.</summary></entry></feed>

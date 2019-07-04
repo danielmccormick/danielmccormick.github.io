@@ -3,10 +3,6 @@ layout: category
 title: Personal
 ---
 
-This probably for personal posts not worth writing a blog about but I'd like to post nontheless.
+This probably for personal non-technical posts that I'd like to write about.
 
-Some topics I might put here include 
-
-* Lifestyle  
-* Cooking   
-* Waterloo
+Some topics I might put here include lifestyle, cooking and Waterloo as a city. 

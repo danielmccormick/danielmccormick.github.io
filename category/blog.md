@@ -3,4 +3,4 @@ layout: category
 title: Blog
 ---
 
-Blog Posts
+Blog posts here are probably somewhat technical and likely a bit more "professional".

@@ -18,9 +18,10 @@ It was reccomended we use something like a circular queue being mutexed and acce
 
 1. There's no guarantee the last element would finish last, resulting in undesired gaps between producing and consuming  
 2. There's implementation issues when there's more producers/consumers than the size of the queue - how to you decide who gets which slots  
-3. Scheduling advancments: do the producers just leapfrog the head? 
+3. Scheduling how each worker moves: Does the first to finish just lock the queue and grab the first available slot? Does each worker get a predetermined slot?  
 
-Regardless, there was a more clever design pattern. The idea here is that the buffer would be random access, and each index would be stored inside one of two stacks (either the producer stack or the consumer stack). When the producer gets a signal that it's stack has an index, it grabs the index, downloads the data and adds the index to the consumer stack.  
+Regardless, there was a design that made more sense to us. 
+The idea here is that the buffer would be random access, and each index would be stored inside one of two stacks (either the producer stack or the consumer stack). When the producer gets a signal that it's stack has an index, it grabs the index, downloads the data and adds the index to the consumer stack.  
 
 The producer pattern was roughly:  
 
@@ -67,17 +68,19 @@ For reference, our struct for the IHDR components were declared something like
         uint32_t crc;  
     } IHDR_t;`
 
-In additional debugging, we also found we got all other members correct - the only variable wrong was the CRC. This bug is not obvious at first, but it makes a reasonable amoutn of sense.  
+In additional debugging, we also found we got all other members correct - the only variable wrong in the header was the CRC. This bug is not obvious at first, but it makes a reasonable amoutn of sense.  
 
-The way we really called the crc calculation was something like `crc(&IHDR.type, (3*4)+(5*1))`because we were calculating the CRC over three four-byte variables and five one-byte variables. We also knew each variable in the struct was the right value, and we were confident in the sizes. If you'd like to figure out why yourself, you should stop reading now. 
+The way we really called the crc calculation was something like `crc(&IHDR.type, (3*4)+(5*1))`because we were calculating the CRC over three four-byte variables and five one-byte variables. We also knew each variable in the struct was corect, the size of each variable was correct, and the CRC was correct. If you'd like to figure out why yourself, you should stop reading now. 
 
-Fortunately for everyone else, we did the leg work. It turns out the culprit in this case was [struct padding](https://stackoverflow.com/questions/4306186/structure-padding-and-packing). While in hindsight, this is pretty clear, at the time it's easy to neglect that c structs don't guarantee there's contiguous memory by default. 
+Fortunately for us, a hex dump of the header yielded some more insight. It turns out the culprit in this case was [struct padding](https://stackoverflow.com/questions/4306186/structure-padding-and-packing). While in hindsight, this makes a lot of sense, at the time it's easy to neglect that c structs don't guarantee there's contiguous memory by default. 
 
 The fix from here was compiler specific, but pretty straightforwards:  
 
     typedef struct __attribute__(packed) {  
         ...    
     } IHDR_t;    
+
+This problem also seemed specific to us, since a lot of our peers stored the variables in a "data" member, and to calculate the CRC they copied it all into a buffer. Fortunately, we prevailed and produced the correct result.
 
 
 ### Cleanup and Debug: 
@@ -90,7 +93,7 @@ This wasn't so cryptic, but it was almost comical looking at who hoarded the mem
 
 `3409 log.out 1293`
 
-Ok. So on any given server, one person used roughly a quarter of all possible shared memory. Everyone was guilty of leaking at a point, but some seem to have a bit more of an issue than others. It's also worth nothing that while shared memory unhooks from processes naturally, it doesn't deallocate naturally (or even with `shmdt`).  
+Any given server, the same one person used roughly a quarter of all possible shared memory. Everyone was guilty of leaking at a point, but some seem to have a bit more of an issue than others. It's also worth nothing that while shared memory unhooks from processes naturally, it doesn't deallocate naturally (or even with `shmdt`).  This _was_ discussed in class, but it seems like many people forgot or their code prematurely terminated before the cleanup could occur.
 
 If anyone is dealing with shared memory for the first time, it's worth remembering to include `shmctl(shmid,IPC_RMID,NULL);` at the end of their program to avoid funny surprises like this. I guess this is why it's important to consider the impact your code has on others.
 
