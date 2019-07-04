@@ -85,7 +85,8 @@ This problem also seemed specific to us, since a lot of our peers stored the var
 
 ### Cleanup and Debug: 
 
-Since we were using multiple processes concurrently, over school networks, we ended up using shared messages. It wasn't too long before the server was spitting out an errormessage alone the line of `shmget failed: No space left on device.` 
+Since we were using multiple processes concurrently, over school networks, we ended up using shared messages.
+It wasn't too long before the server was spitting out an errormessage alone the line of `shmget: No space left on device.  
   
 This wasn't so cryptic, but it was almost comical looking at who hoarded the memory (on university servers).  
   
@@ -109,3 +110,4 @@ The main takeaways I had from this were:
 1. Take some time to _really_ think about your design, or you'll spend far more time in the long run on the design.  
 2. Consider what you really are accomplishing, because abstractions tend to be leaky.  
 3. Always choose the best debugging tools for the job - you'll otherwise just maker it harder on yourself.
+
