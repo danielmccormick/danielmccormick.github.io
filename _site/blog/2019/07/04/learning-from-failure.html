@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en-us">
+
+  <head>
+  <link href="https://gmpg.org/xfn/11" rel="profile" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta http-equiv="content-type" content="text/html; charset=utf-8" />
+
+  <!-- Enable responsiveness on mobile devices-->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+
+  <title>
+    
+      Learning From Mistakes - Concurrency, Packing and PNGs &middot; Daniel MC
+    
+  </title>
+
+  
+
+
+  <!-- CSS -->
+  <link rel="stylesheet" href="/assets/css/main.css" />
+  
+
+<link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Abril+Fatface" />
+
+  <!-- Icons -->
+  <link rel="apple-touch-icon-precomposed" sizes="144x144" href="/favicon.png" />
+<link rel="shortcut icon" href="/favicon.ico" />
+
+  <!-- RSS -->
+  <link rel="alternate" type="application/rss+xml" title="RSS" href="/feed.xml" />
+
+  <!-- Additional head bits without overriding original head -->
+</head>
+
+
+  <body class="post">
+
+    <div id="sidebar">
+  <header>
+    <div class="site-title">
+      <a href="/">
+        
+          <span class="back-arrow icon"><svg fill="#000000" height="24" viewBox="0 0 24 24" width="24" xmlns="http://www.w3.org/2000/svg">
+  <path d="M0 0h24v24H0z" fill="none"/>
+  <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
+</svg></span>
+        
+        Daniel MC
+      </a>
+    </div>
+    <p class="lead">Personal website.</p>
+  </header>
+  <nav id="sidebar-nav-links">
+  
+    <a class="home-link "
+        href="/">Home</a>
+  
+  
+
+  
+
+  
+
+
+  
+    
+  
+
+  
+    
+      <a class="page-link "
+          href="/about.html">About</a>
+    
+  
+
+  
+    
+  
+
+  
+    
+  
+
+  
+
+  
+    
+  
+
+  
+    
+  
+
+  
+    
+  
+
+  
+
+  
+
+
+  
+
+
+  
+    
+  
+
+  
+    
+  
+
+  
+    
+      <a class="category-link "
+          href="/category/blog.html">Blog</a>
+    
+  
+
+  
+    
+  
+
+  
+
+  
+    
+      <a class="category-link "
+          href="/category/personal.html">Personal</a>
+    
+  
+
+  
+    
+  
+
+  
+    
+  
+
+  
+
+  
+
+
+  <!-- Optional additional links to insert in sidebar nav -->
+</nav>
+
+
+  
+
+  <nav id="sidebar-icon-links">
+  
+    <br>
+  
+  
+  
+  
+
+
+  <!-- Optional additional links to insert for icons links -->
+</nav>
+
+  <p>
+  <br>
+  <a> </a>
+</p>
+
+</div>
+
+    <main class="container">
+      <header>
+  <h1 class="post-title">Learning From Mistakes - Concurrency, Packing and PNGs</h1>
+</header>
+<div class="content">
+  <div class="post-meta">
+  <span class="post-date">04 Jul 2019</span>
+  <span class="post-categories">
+    
+      &bull;
+
+      
+      
+      
+
+      
+        <a href="/category/blog.html">
+          Blog
+        </a>
+      
+    
+  </span>
+</div>
+
+
+  <div class="post-body">
+    <p>I’m a firm believer than you learn more from failures than from successes. From that perspective, for our <a href="https://github.com/jzarnett/ece252">concurrency class</a> labs I must have learned a ton.</p>
+
+<p>In one of our labs, a challenge we had was that we needed to implement the producer/consumer problem for PNGs.
+We needed to download the PNGs from a webserver (as a <em>producer</em>) into a finite size buffer, then move the data into the appopriate slots (as a <em>consumer</em>) and concatenate them all into a final <code class="highlighter-rouge">all.png</code> 
+While that sounds fairly reasonable all things considered, we can get into a few interesting issues.</p>
+
+<h3 id="system-design">System Design</h3>
+
+<p>It was reccomended we use something like a circular queue being mutexed and accessed between the producers and consumers. The idea with this would be that the consumers could chase the tail of the producers (and then have individual locks on each element in the queue). This design, all things being considered has a few flaws:</p>
+
+<ol>
+  <li>There’s no guarantee the last element would finish last, resulting in undesired gaps between producing and consuming</li>
+  <li>There’s implementation issues when there’s more producers/consumers than the size of the queue - how to you decide who gets which slots</li>
+  <li>Scheduling advancments: do the producers just leapfrog the head?</li>
+</ol>
+
+<p>Regardless, there was a more clever design pattern. The idea here is that the buffer would be random access, and each index would be stored inside one of two stacks (either the producer stack or the consumer stack). When the producer gets a signal that it’s stack has an index, it grabs the index, downloads the data and adds the index to the consumer stack.</p>
+
+<p>The producer pattern was roughly:</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>* wait(producer_semaphore)  
+* lock(producer_mutex)  
+* get_index()  
+* unlock(producer_mutex)  
+* produce_data()   
+* lock(consumer_mutex)   
+* insert_index()  
+* unlock(consumer_mutex)  
+* post(consumer_semaphore)  
+</code></pre></div></div>
+
+<p>And the consumer pattern looked like:</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>* wait(consumer_semaphore)  
+* lock(consumer_mutex)  
+* get_index()  
+* unlock(counsmer_mutex) 
+* consume_data()  
+* lock(producer_mutex)  
+* insert_index()  
+* unlock(producer_mutex)  
+* post(producer_semaphore)  
+</code></pre></div></div>
+
+<p>This starts with all locks unlocked, the producer stack/semaphore full, and the consumer stack/semaphore empty (as nothing is produced to begin). While lots of people had deadlocks and issues, since we considered the design pattern carefully, we didn’t have conflicts with this issue. The reasons this were successful were pretty simple: we never nested mutexes, so we couldn’t have one lock a resource the other would need. The semaphore was an appropriate barrier since it’d let a worker through to take data if and only if data was available. While I do like concurrency, I’m glad I didn’t have too many issues debugging it.</p>
+
+<h3 id="struct-packing-and-cryptic-error-messages">Struct Packing and Cryptic Error Messages</h3>
+
+<p>At one point, we had everything right but one checksum: the <a href="https://en.wikipedia.org/wiki/Cyclic_redundancy_check">CRC</a> (cyclic redunancy check) for our IHDR (the header chunk) was incorrect. Our CRC was always valid for the other components and always invalid for the header. Since it ws the same function, and we were quite confident about the spacing, it seemed very likely something was wrong about the header.</p>
+
+<p>For reference, our struct for the IHDR components were declared something like</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>typedef struct {  
+    uint32_t length;  
+    uint32_t type; //0x49484452  
+    uint32_t width;  
+    uint32_t height;
+    uint8_t bit_depth;  
+    uint8_t colour_type;  
+    uint8_t compression_method;  
+    uint8_t filter_method;  
+    uint8_t interlace method;  
+    uint32_t crc;  
+} IHDR_t;`
+</code></pre></div></div>
+
+<p>In additional debugging, we also found we got all other members correct - the only variable wrong was the CRC. This bug is not obvious at first, but it makes a reasonable amoutn of sense.</p>
+
+<p>The way we really called the crc calculation was something like <code class="highlighter-rouge">crc(&amp;IHDR.type, (3*4)+(5*1))</code>because we were calculating the CRC over three four-byte variables and five one-byte variables. We also knew each variable in the struct was the right value, and we were confident in the sizes. If you’d like to figure out why yourself, you should stop reading now.</p>
+
+<p>Fortunately for everyone else, we did the leg work. It turns out the culprit in this case was <a href="https://stackoverflow.com/questions/4306186/structure-padding-and-packing">struct padding</a>. While in hindsight, this is pretty clear, at the time it’s easy to neglect that c structs don’t guarantee there’s contiguous memory by default.</p>
+
+<p>The fix from here was compiler specific, but pretty straightforwards:</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>typedef struct __attribute__(packed) {  
+    ...    
+} IHDR_t;    
+</code></pre></div></div>
+
+<h3 id="cleanup-and-debug">Cleanup and Debug:</h3>
+
+<p>Since we were using multiple processes concurrently, over school networks, we ended up using shared messages. It wasn’t too long before the server was spitting out an errormessage alone the line of <code class="highlighter-rouge">shmget failed: No space left on device.</code></p>
+
+<p>This wasn’t so cryptic, but it was almost comical looking at who hoarded the memory (on university servers).</p>
+
+<p><code class="highlighter-rouge">ipcs -a &gt; log.out; wc -l log.out; grep -c "_username_" log.out</code></p>
+
+<p><code class="highlighter-rouge">3409 log.out 1293</code></p>
+
+<p>Ok. So on any given server, one person used roughly a quarter of all possible shared memory. Everyone was guilty of leaking at a point, but some seem to have a bit more of an issue than others. It’s also worth nothing that while shared memory unhooks from processes naturally, it doesn’t deallocate naturally (or even with <code class="highlighter-rouge">shmdt</code>).</p>
+
+<p>If anyone is dealing with shared memory for the first time, it’s worth remembering to include <code class="highlighter-rouge">shmctl(shmid,IPC_RMID,NULL);</code> at the end of their program to avoid funny surprises like this. I guess this is why it’s important to consider the impact your code has on others.</p>
+
+<p>Finally, when debugging, to try printing the buffer treating the data as a big pile of characters and printing the data out char by char. This results sometimes in obnoxious outputs however, like <code class="highlighter-rouge">!▒▒j▒▒{▒s▒▒rt▒s▒m[rΘm▒B▒I]w▒i▒)j        ▒</code>9▒▒▒m[`.</p>
+
+<p>Obviously, this isn’t an ideal or easy way to debug, and it’s hard to recognize what bytes physically are. An easy fix solution would be to print it out chunk by chunk as an integer, but there’s an even better solution. Printing it was a hex value. Either dumping a finished file with xxd or printing out using %x. This check is invaluable for when you need to diff non text files or trying to figure out how much you get wrong.</p>
+
+<p>Mistakes are natural, and in my opinion better in a lab environment where the scope is rather limited (constraining the causes of the bug), to learn the causes before there’s a litany of factors to consider concurrently. To quote Alexander Suvorov, “Train hard, fight easy.</p>
+
+<p>The main takeaways I had from this were:</p>
+
+<ol>
+  <li>Take some time to <em>really</em> think about your design, or you’ll spend far more time in the long run on the design.</li>
+  <li>Consider what you really are accomplishing, because abstractions tend to be leaky.</li>
+  <li>Always choose the best debugging tools for the job - you’ll otherwise just maker it harder on yourself.</li>
+</ol>
+
+    
+
+
+
+<div class="post-tags">
+  
+</div>
+  </div>
+
+  
+  <section class="related">
+  <h2>Related Posts</h2>
+  <ul class="posts-list">
+    
+      <li>
+        <h3>
+          <a href="/personal/2019/07/03/initial-commit.html">
+            First Post
+            <small>03 Jul 2019</small>
+          </a>
+        </h3>
+      </li>
+    
+  </ul>
+</section>
+
+</div>
+
+    </main>
+
+    <!-- Optional footer content -->
+
+  </body>
+</html>

@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom" ><generator uri="https://jekyllrb.com/" version="3.8.5">Jekyll</generator><link href="http://localhost:4000/feed.xml" rel="self" type="application/atom+xml" /><link href="http://localhost:4000/" rel="alternate" type="text/html" /><updated>2019-07-04T17:13:20-04:00</updated><id>http://localhost:4000/feed.xml</id><title type="html">Daniel MC</title><subtitle>Personal website.</subtitle><author><name>Daniel McCormick</name></author><entry><title type="html">Learning From Mistakes - Concurrency, Packing and PNGs</title><link href="http://localhost:4000/blog/2019/07/04/learning-from-failure.html" rel="alternate" type="text/html" title="Learning From Mistakes - Concurrency, Packing and PNGs" /><published>2019-07-04T00:00:00-04:00</published><updated>2019-07-04T15:15:02-04:00</updated><id>http://localhost:4000/blog/2019/07/04/learning-from-failure</id><content type="html" xml:base="http://localhost:4000/blog/2019/07/04/learning-from-failure.html">&lt;p&gt;I’m a firm believer than you learn more from failures than from successes. From that perspective, for our &lt;a href=&quot;https://github.com/jzarnett/ece252&quot;&gt;concurrency class&lt;/a&gt; labs I must have learned a ton.&lt;/p&gt;
+
+&lt;p&gt;In one of our labs, a challenge we had was that we needed to implement the producer/consumer problem for PNGs.
+We needed to download the PNGs from a webserver (as a &lt;em&gt;producer&lt;/em&gt;) into a finite size buffer, then move the data into the appopriate slots (as a &lt;em&gt;consumer&lt;/em&gt;) and concatenate them all into a final &lt;code class=&quot;highlighter-rouge&quot;&gt;all.png&lt;/code&gt; 
+While that sounds fairly reasonable all things considered, we can get into a few interesting issues.&lt;/p&gt;
+
+&lt;h3 id=&quot;system-design&quot;&gt;System Design&lt;/h3&gt;
+
+&lt;p&gt;It was reccomended we use something like a circular queue being mutexed and accessed between the producers and consumers. The idea with this would be that the consumers could chase the tail of the producers (and then have individual locks on each element in the queue). This design, all things being considered has a few flaws:&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;There’s no guarantee the last element would finish last, resulting in undesired gaps between producing and consuming&lt;/li&gt;
+  &lt;li&gt;There’s implementation issues when there’s more producers/consumers than the size of the queue - how to you decide who gets which slots&lt;/li&gt;
+  &lt;li&gt;Scheduling advancments: do the producers just leapfrog the head?&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;Regardless, there was a more clever design pattern. The idea here is that the buffer would be random access, and each index would be stored inside one of two stacks (either the producer stack or the consumer stack). When the producer gets a signal that it’s stack has an index, it grabs the index, downloads the data and adds the index to the consumer stack.&lt;/p&gt;
+
+&lt;p&gt;The producer pattern was roughly:&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;* wait(producer_semaphore)  
+* lock(producer_mutex)  
+* get_index()  
+* unlock(producer_mutex)  
+* produce_data()   
+* lock(consumer_mutex)   
+* insert_index()  
+* unlock(consumer_mutex)  
+* post(consumer_semaphore)  
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;And the consumer pattern looked like:&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;* wait(consumer_semaphore)  
+* lock(consumer_mutex)  
+* get_index()  
+* unlock(counsmer_mutex) 
+* consume_data()  
+* lock(producer_mutex)  
+* insert_index()  
+* unlock(producer_mutex)  
+* post(producer_semaphore)  
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;This starts with all locks unlocked, the producer stack/semaphore full, and the consumer stack/semaphore empty (as nothing is produced to begin). While lots of people had deadlocks and issues, since we considered the design pattern carefully, we didn’t have conflicts with this issue. The reasons this were successful were pretty simple: we never nested mutexes, so we couldn’t have one lock a resource the other would need. The semaphore was an appropriate barrier since it’d let a worker through to take data if and only if data was available. While I do like concurrency, I’m glad I didn’t have too many issues debugging it.&lt;/p&gt;
+
+&lt;h3 id=&quot;struct-packing-and-cryptic-error-messages&quot;&gt;Struct Packing and Cryptic Error Messages&lt;/h3&gt;
+
+&lt;p&gt;At one point, we had everything right but one checksum: the &lt;a href=&quot;https://en.wikipedia.org/wiki/Cyclic_redundancy_check&quot;&gt;CRC&lt;/a&gt; (cyclic redunancy check) for our IHDR (the header chunk) was incorrect. Our CRC was always valid for the other components and always invalid for the header. Since it ws the same function, and we were quite confident about the spacing, it seemed very likely something was wrong about the header.&lt;/p&gt;
+
+&lt;p&gt;For reference, our struct for the IHDR components were declared something like&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;typedef struct {  
+    uint32_t length;  
+    uint32_t type; //0x49484452  
+    uint32_t width;  
+    uint32_t height;
+    uint8_t bit_depth;  
+    uint8_t colour_type;  
+    uint8_t compression_method;  
+    uint8_t filter_method;  
+    uint8_t interlace method;  
+    uint32_t crc;  
+} IHDR_t;`
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;In additional debugging, we also found we got all other members correct - the only variable wrong was the CRC. This bug is not obvious at first, but it makes a reasonable amoutn of sense.&lt;/p&gt;
+
+&lt;p&gt;The way we really called the crc calculation was something like &lt;code class=&quot;highlighter-rouge&quot;&gt;crc(&amp;amp;IHDR.type, (3*4)+(5*1))&lt;/code&gt;because we were calculating the CRC over three four-byte variables and five one-byte variables. We also knew each variable in the struct was the right value, and we were confident in the sizes. If you’d like to figure out why yourself, you should stop reading now.&lt;/p&gt;
+
+&lt;p&gt;Fortunately for everyone else, we did the leg work. It turns out the culprit in this case was &lt;a href=&quot;https://stackoverflow.com/questions/4306186/structure-padding-and-packing&quot;&gt;struct padding&lt;/a&gt;. While in hindsight, this is pretty clear, at the time it’s easy to neglect that c structs don’t guarantee there’s contiguous memory by default.&lt;/p&gt;
+
+&lt;p&gt;The fix from here was compiler specific, but pretty straightforwards:&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;typedef struct __attribute__(packed) {  
+    ...    
+} IHDR_t;    
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;h3 id=&quot;cleanup-and-debug&quot;&gt;Cleanup and Debug:&lt;/h3&gt;
+
+&lt;p&gt;Since we were using multiple processes concurrently, over school networks, we ended up using shared messages. It wasn’t too long before the server was spitting out an errormessage alone the line of &lt;code class=&quot;highlighter-rouge&quot;&gt;shmget failed: No space left on device.&lt;/code&gt;&lt;/p&gt;
+
+&lt;p&gt;This wasn’t so cryptic, but it was almost comical looking at who hoarded the memory (on university servers).&lt;/p&gt;
+
+&lt;p&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;ipcs -a &amp;gt; log.out; wc -l log.out; grep -c &quot;_username_&quot; log.out&lt;/code&gt;&lt;/p&gt;
+
+&lt;p&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;3409 log.out 1293&lt;/code&gt;&lt;/p&gt;
+
+&lt;p&gt;Ok. So on any given server, one person used roughly a quarter of all possible shared memory. Everyone was guilty of leaking at a point, but some seem to have a bit more of an issue than others. It’s also worth nothing that while shared memory unhooks from processes naturally, it doesn’t deallocate naturally (or even with &lt;code class=&quot;highlighter-rouge&quot;&gt;shmdt&lt;/code&gt;).&lt;/p&gt;
+
+&lt;p&gt;If anyone is dealing with shared memory for the first time, it’s worth remembering to include &lt;code class=&quot;highlighter-rouge&quot;&gt;shmctl(shmid,IPC_RMID,NULL);&lt;/code&gt; at the end of their program to avoid funny surprises like this. I guess this is why it’s important to consider the impact your code has on others.&lt;/p&gt;
+
+&lt;p&gt;Finally, when debugging, to try printing the buffer treating the data as a big pile of characters and printing the data out char by char. This results sometimes in obnoxious outputs however, like &lt;code class=&quot;highlighter-rouge&quot;&gt;!▒▒j▒▒{▒s▒▒rt▒s▒m[rΘm▒B▒I]w▒i▒)j        ▒&lt;/code&gt;9▒▒▒m[`.&lt;/p&gt;
+
+&lt;p&gt;Obviously, this isn’t an ideal or easy way to debug, and it’s hard to recognize what bytes physically are. An easy fix solution would be to print it out chunk by chunk as an integer, but there’s an even better solution. Printing it was a hex value. Either dumping a finished file with xxd or printing out using %x. This check is invaluable for when you need to diff non text files or trying to figure out how much you get wrong.&lt;/p&gt;
+
+&lt;p&gt;Mistakes are natural, and in my opinion better in a lab environment where the scope is rather limited (constraining the causes of the bug), to learn the causes before there’s a litany of factors to consider concurrently. To quote Alexander Suvorov, “Train hard, fight easy.&lt;/p&gt;
+
+&lt;p&gt;The main takeaways I had from this were:&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;Take some time to &lt;em&gt;really&lt;/em&gt; think about your design, or you’ll spend far more time in the long run on the design.&lt;/li&gt;
+  &lt;li&gt;Consider what you really are accomplishing, because abstractions tend to be leaky.&lt;/li&gt;
+  &lt;li&gt;Always choose the best debugging tools for the job - you’ll otherwise just maker it harder on yourself.&lt;/li&gt;
+&lt;/ol&gt;</content><author><name>Daniel McCormick</name></author><summary type="html">I’m a firm believer than you learn more from failures than from successes. From that perspective, for our concurrency class labs I must have learned a ton.</summary></entry><entry><title type="html">First Post</title><link href="http://localhost:4000/personal/2019/07/03/initial-commit.html" rel="alternate" type="text/html" title="First Post" /><published>2019-07-03T00:00:00-04:00</published><updated>2019-07-03T15:15:02-04:00</updated><id>http://localhost:4000/personal/2019/07/03/initial-commit</id><content type="html" xml:base="http://localhost:4000/personal/2019/07/03/initial-commit.html">&lt;p&gt;I finally have a halfway passable website up for public viewing. It was both fun and easier than anticipated.&lt;/p&gt;
+
+&lt;p&gt;After a long time of barebones websites, I finally decided to make a bit more visually complicated website. Luckily, modern tools like jekyll have made this process far easier than ever anticipated.&lt;/p&gt;
+
+&lt;p&gt;After perusing many interesting designs such as &lt;a href=&quot;https://github.com/poole/hyde&quot;&gt;hyde&lt;/a&gt;, &lt;a href=&quot;https://github.com/aweekj/kiko-now&quot;&gt;kiko-now&lt;/a&gt;, and &lt;a href=&quot;https://github.com/hemangsk/Gravity&quot;&gt;gravity&lt;/a&gt;, 
+I ultimately chose &lt;strong&gt;&lt;a href=&quot;https://github.com/fongandrew/hydeout&quot;&gt;hydeout&lt;/a&gt;&lt;/strong&gt;, because both of it’s current support and ease of use to make blog posts.&lt;/p&gt;
+
+&lt;p&gt;Beyond specializing the template with my name, updating the favicon and removing all the basic blog posts, I ultimately removed the icons on the side that I felt were unnecessary.
+I’m delighted by both how easy &lt;code class=&quot;highlighter-rouge&quot;&gt;jekyll&lt;/code&gt; is to use and how fast I can create code the way I’d like.
+It feels far more natural and intuitive to write in markdown and let the computer convert to html for me. I’m grateful to have discovered such a wonderful tool.&lt;/p&gt;</content><author><name>Daniel McCormick</name></author><summary type="html">I finally have a halfway passable website up for public viewing. It was both fun and easier than anticipated.</summary></entry></feed>
