@@ -14,7 +14,7 @@ After perusing many interesting designs such as [hyde](https://github.com/poole/
 I ultimately chose **[hydeout](https://github.com/fongandrew/hydeout)**, because it's currently maintained, and I find it very easy to make blog posts.  
 
 Beyond specializing the template with my name, updating the favicon and removing all the basic blog posts, I ultimately removed the icons on the side that I felt were unnecessary.
-I'm delighted by both how easy `jekyll` is to use and the abundance of beautiful templates all available open source.
+I'm delighted by both how easy `jekyll` is to use and how abundant beautiful open source templates are.
 It feels far more natural and intuitive to write in markdown and let the computer convert to html for me. I'm grateful to have discovered such a wonderful tool.
 
 

@@ -13,6 +13,6 @@ While I know a variety of languages (including VHDL, ASM(ARM,x86), C, Pascal, Py
 I attribute this to my interest in lightweight abstractions and large templating error messages.
 
 
-You can additionally find my goodreads [here](https://www.goodreads.com/danielmccormick), but I don't maintain it very well. If you have any good book reccomendations (particularly non-fiction or mystery), please do let me know.
+You can additionally find my goodreads [here](https://www.goodreads.com/danielmccormick), but I don't maintain it very well. If you have any good book recomendations (particularly non-fiction or mystery), please do let me know.
 
 Resume TBD.
