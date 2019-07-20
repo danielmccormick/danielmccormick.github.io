@@ -3,7 +3,7 @@ layout: post
 title: "Embedded Systems - Learning and Growth (WIP)"
 categories:
   - Blog
-last_modified_at: 2019-07-08T13:15:02-05:0
+last_modified_at: 2019-07-18T13:15:02-05:0
 ---
 
 This school term, I'm taking embedded microprocessor systems (ECE 224), and instrumentation and prototyping (ECE 298). While at times they have been challenging, overall, I have learned a lot and ultimately got to deal with interesting challenges taught in class. 
@@ -84,7 +84,7 @@ Of couse, we wouldn't have figured this out without benchmarking. In the other c
 
 Luckily, when tested thoroughly, the compiler optimization greatly enhanced the performance of our WAV player and was absolutely invaluable in fixing. I'm not complaining about what the optimizer does, just giving a heads up for those thinking about it. Of course, if we were allowed to modify our code, we simply could've declared all the variabeles volatile. In hindsight, perhaps saying "do not trust the compiler" might be a bit inflammatory.
 
-## Rule 3: Consider Undefined Behaviour
+## Rule 3: Consider the hardware
 
 Since printf is too slow, we were going to toggle some memory mapped LEDs to observe the results in real time. One would on first glance presume you could write your code along the lines of 
 
@@ -92,4 +92,6 @@ Since printf is too slow, we were going to toggle some memory mapped LEDs to obs
     led_status ^= 0x0002;
     IOWR(LED_BASE,0,led_status);
 
-Which gave strange and unexpected results. With further reading, it turns out the LED was write-only 
+Which gave strange and unexpected results. With further reading, it turns out the LED was write-only. With this knowledge in mind, it's easy to see the issue, however you just treat the memory address as a data port like any other, this isn't immediately obvious. This also is the cause of other issues.
+
+To be continued?
